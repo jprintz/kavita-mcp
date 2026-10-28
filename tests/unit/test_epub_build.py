@@ -173,3 +173,53 @@ def test_plain_title_has_no_calibre_series(pandoc_bin):
 def test_volume_title_epub_valid(pandoc_bin, epubcheck):
     meta = DocumentMeta(**{**META.__dict__, "title": "Status Report Vol. 2"})
     epubcheck(build(meta=meta, pandoc=pandoc_bin))
+
+
+# Kavita's web reader puts book pages into the DOM without sanitising them
+# (0.9.1.4, book-reader.component.ts bypassSecurityTrustHtml): nothing active
+# may reach the EPUB.
+ACTIVE = [
+    "<svg onload=alert(1)></svg>\n",
+    "<details open ontoggle=alert(1)>x</details>\n",
+    "[x]{onclick=alert(1)}\n",
+    "::: {onmouseover=alert(1)}\ntext\n:::\n",
+    "# H {onclick=alert(1)}\n",
+    f"![a](data:image/png;base64,{PNG_1PX}){{onerror=alert(1)}}\n",
+    '```{=epub3}\n<img src="https://example.com/x.png" onerror="alert(1)">\n```\n',
+    "```{=html}\n<script>alert(1)</script>\n```\n",
+    "[click](javascript:alert(1))\n",
+    '<iframe src="https://example.com"></iframe>\n',
+    '<video src="https://example.com/v.mp4"></video>\n',
+    '[s]{style="background:url(https://example.com/t)"}\n',
+    "![svg](data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+PC9zdmc+)\n",
+]
+BAD = (
+    "onload",
+    "onerror",
+    "onclick",
+    "ontoggle",
+    "onmouseover",
+    "javascript:",
+    "<script",
+    "<iframe",
+    "<video",
+    "<svg",
+    "example.com",
+    "url(",
+)
+
+
+@pytest.mark.parametrize("md", ACTIVE)
+def test_active_content_is_removed(pandoc_bin, md):
+    epub = build(md=md, pandoc=pandoc_bin)
+    body = xhtml_text(epub).lower()
+    assert [b for b in BAD if b in body] == []
+    assert not [n for n in entries(epub) if n.endswith(".svg")]
+
+
+def test_simple_inline_html_and_safe_links_kept(pandoc_bin):
+    md = "H<sub>2</sub>O, x<sup>2</sup><br>[web](https://example.org/p) [mail](mailto:a@b.c) [top](#intro)\n"
+    body = xhtml_text(build(md=md, pandoc=pandoc_bin))
+    assert "<sub>2</sub>" in body and "<sup>2</sup>" in body and "<br" in body
+    assert 'href="https://example.org/p"' in body
+    assert 'href="mailto:a@b.c"' in body

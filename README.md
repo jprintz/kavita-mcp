@@ -38,13 +38,25 @@ All ten carry `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint` and
 A row is `{series_id, title, author, library, added, word_count, pages,
 read_status, progress_pct}`.
 
-**Images:** only `data:` URIs (base64, up to `MAX_IMAGE_BYTES` each). Any other
-image (a URL or a path) becomes its alt text; pandoc runs with `--sandbox`, so it
-never fetches or reads anything else.
+**Images:** only embedded raster images as `data:` URIs (PNG, JPEG, GIF, WebP;
+up to `MAX_IMAGE_BYTES` each). Any other image (a URL, a path, SVG) becomes its alt
+text; pandoc runs with `--sandbox`, so it never fetches or reads anything else.
+
+**Nothing active reaches the book.** Kavita's web reader puts book pages into the
+page without sanitising them, so the EPUB gets only passive content: raw HTML is
+dropped except a few bare tags (`<sub>`, `<sup>`, `<br>`, `<b>`, `<i>`, ...), event
+handler and `style` attributes are removed, and links keep their target only for
+`http(s):`, `mailto:` and `#` (others keep just their text).
 
 **`scan_now`:** asks Kavita to scan the Reports library now (seconds) instead of
 waiting for its folder watcher (about 6 minutes). It needs an admin key; with
 another key the file is still written and the answer says so.
+
+Deleting the **last** report also removes its series from Kavita directly (admin
+key): Kavita removes nothing in a scan that finds no series at all, so it would
+otherwise keep listing it until the next report is published. A hidden
+`Reports/.kavita-mcp` file keeps the folder from being empty, because Kavita aborts
+every scan of an empty library folder.
 
 ## Configuration
 
@@ -153,6 +165,14 @@ integration tests pin most of it.
    one, which disappears), so `update_document` never changes titles.
 8. **Collections** work without Kavita+. They are private to their owner unless
    promoted. A user's own collections show in their OPDS catalog.
+
+9. **Deleting:** a series whose folder is gone disappears on the next scan, but
+   only if that scan finds at least one other series; Kavita aborts scans of an
+   empty library folder outright. `DELETE /api/Series/{id}` alone, with the file
+   still there, comes back on the next scan.
+10. **Kavita's web reader** inserts book pages with Angular's sanitiser bypassed
+    (`bypassSecurityTrustHtml`), so anything active in an EPUB would run in the
+    reader's session; see "Nothing active reaches the book" above.
 
 Also found: Kavita cuts titles with a volume marker ("Report v2 Final" becomes
 series "Report", volume 2) and merges every such book into one series. For those

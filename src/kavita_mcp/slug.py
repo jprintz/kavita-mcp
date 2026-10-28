@@ -1,5 +1,6 @@
 """Slugs, and the only file paths kavita-mcp ever builds from them."""
 
+import hashlib
 import posixpath
 import re
 import unicodedata
@@ -27,15 +28,38 @@ class ReportLocation:
     kavita_dir: str  # Kavita's folderPath: /reports/<slug>
 
 
+# Letters that NFKD doesn't decompose into ASCII.
+_TRANSLIT = str.maketrans(
+    {
+        "ø": "o", "Ø": "O", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ß": "ss",
+        "đ": "d", "Đ": "D", "ł": "l", "Ł": "L", "þ": "th", "Þ": "TH", "ð": "d", "Ð": "D",
+        "ı": "i",
+    }
+)  # fmt: skip
+
+
+def _ascii(text: str) -> str:
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+
 def slugify(title: str) -> str:
-    text = unicodedata.normalize("NFKD", title)
-    text = text.encode("ascii", "ignore").decode("ascii").lower()
-    text = re.sub(r"['`]", "", text)  # "Åsa's" -> "asas", not "asa-s"
-    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
-    text = text[:MAX_SLUG].rstrip("-")
-    if not text:
+    """The folder name for a title: the same slug means the same book.
+
+    Titles in other scripts lose letters on the way to ASCII ("Отчёт 2026" and
+    "Бюджет 2026" would both be "2026"), so they get a short hash of the title.
+    """
+    if not any(ch.isalnum() for ch in title):
         raise InvalidTitle(f"The title {title!r} has no letters or digits to name its folder with")
-    return text
+    text = title.translate(_TRANSLIT)
+    lost = any(ch.isalnum() and not _ascii(ch) for ch in text)
+    slug = re.sub(r"['`]", "", _ascii(text).lower())  # "Åsa's" -> "asas", not "asa-s"
+    slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
+    if not lost:
+        return slug[:MAX_SLUG].rstrip("-")
+    normal = " ".join(title.split()).casefold()
+    digest = hashlib.sha1(normal.encode("utf-8")).hexdigest()[:6]
+    slug = slug[: MAX_SLUG - len(digest) - 1].rstrip("-")
+    return f"{slug}-{digest}" if slug else digest
 
 
 def _check(slug: str) -> None:

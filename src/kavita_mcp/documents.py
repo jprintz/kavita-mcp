@@ -22,6 +22,11 @@ from kavita_mcp.slug import InvalidTitle, locate, slug_from_kavita_folder, slugi
 
 MAX_TITLE = 200
 WATCHER_NOTE = "Kavita's folder watcher picks it up in about 6 minutes."
+KEEP_FILE = ".kavita-mcp"
+KEEP_TEXT = (
+    b"kavita-mcp keeps this file so the Reports folder is never empty: Kavita skips\n"
+    b"every scan of a library whose folder is empty.\n"
+)
 # A book Kavita scanned less than this long ago needs a forced re-read (see _reread).
 RECENT_SCAN = timedelta(minutes=2)
 
@@ -109,43 +114,36 @@ class Publisher:
     async def _scan(self, folder: str, *, present: bool) -> tuple[dict | None, str]:
         """Scan the Reports library now; wait until the folder's series is present/absent.
 
-        Kavita errors become the note: the file itself is already in place.
+        Kavita errors become the note: the file change itself is already done.
         """
+        if present:
+            done, later = "The file is in place", WATCHER_NOTE
+        else:
+            done = "The book's folder is deleted"
+            later = "Kavita's folder watcher drops it in about 6 minutes."
         try:
             library = await self.reports_library()
             await self._kavita.scan_library(library["id"])
         except KavitaForbidden:
-            return (
-                None,
-                f"The file is in place, but scan_now needs an admin Kavita key. {WATCHER_NOTE}",
-            )
+            return None, f"{done}, but scan_now needs an admin Kavita key. {later}"
         except KavitaMcpError as e:
-            return (
-                None,
-                f"The file is in place, but Kavita could not scan it now ({e}). {WATCHER_NOTE}",
-            )
+            return None, f"{done}, but Kavita could not scan now ({e}). {later}"
         deadline = time.monotonic() + self._s.scan_timeout_seconds
         requested = time.monotonic()
         while True:
             try:
                 series = await self._kavita.series_by_folder(folder)
             except KavitaError as e:
-                return (
-                    None,
-                    f"The file is in place, but Kavita stopped answering ({e}). {WATCHER_NOTE}",
-                )
+                return None, f"{done}, but Kavita stopped answering ({e}). {later}"
             if present and series:
                 return series, "Kavita has it now."
             if not present and not series:
                 return None, "Kavita has removed it."
             if time.monotonic() >= deadline:
                 timeout = f"{self._s.scan_timeout_seconds:.0f} s"
-                if present:
-                    return None, (
-                        f"The file is in place, but Kavita hasn't listed it within {timeout}; "
-                        "it will on its next scan."
-                    )
-                return series, f"The folder is gone, but Kavita still lists it after {timeout}."
+                return (series if not present else None), (
+                    f"{done}, but Kavita hasn't caught up within {timeout}. {later}"
+                )
             if time.monotonic() - requested >= self._rescan:
                 # Kavita drops a scan request while a scan of the library is still
                 # running ("duplicate request ... Skipping"), which may have missed
@@ -263,7 +261,8 @@ class Publisher:
             data = await self._files.download(loc.fb_file)
             old = read_info(data)
             new = rewrite_metadata(data, summary=summary, collection=collection)
-            await self._files.upload(loc.fb_file, new)
+            # Kavita first: if it fails, the EPUB still names the old collection,
+            # so a retry removes the book from it again.
             if collection is not KEEP:
                 if old.collection and (
                     collection is None or old.collection.casefold() != collection.casefold()
@@ -271,6 +270,7 @@ class Publisher:
                     await self._kavita.remove_from_collection(series_id, old.collection)
                 if collection:
                     await self._kavita.add_to_collection(series_id, collection)
+            await self._files.upload(loc.fb_file, new)
         info = read_info(new)
         note = await self._reread(series, scan_now)
         return {
@@ -287,13 +287,40 @@ class Publisher:
                 "delete_document deletes the book: call it with confirm: true"
             )
         _, loc = await self._managed(series_id)
+        reports_dir = f"{self._s.filebrowser_reports_dir}/"
         async with self._locks[loc.slug]:
+            # Kavita aborts every scan of a library whose folder is empty: keep a
+            # hidden file there.
+            keep = reports_dir + KEEP_FILE
+            if not await self._files.exists(keep):
+                await self._files.upload(keep, KEEP_TEXT)
             await self._files.delete(loc.fb_dir)
-        if scan_now:
+            others = [n for n in await self._files.list_dir(reports_dir) if not n.startswith(".")]
+        if not others:
+            note = await self._delete_last(series_id)
+        elif scan_now:
             _, note = await self._scan(loc.kavita_dir, present=False)
         else:
             note = "Kavita's folder watcher removes it in about 6 minutes."
         return {"series_id": series_id, "slug": loc.slug, "deleted": True, "note": note}
+
+    async def _delete_last(self, series_id: int) -> str:
+        """The last report: Kavita removes nothing in a scan that finds no series at
+        all (0.9.1), so its series would stay. Its file is gone, so deleting the
+        series in Kavita can't be undone by a scan."""
+        try:
+            await self._kavita.delete_series(series_id)
+        except KavitaForbidden:
+            return (
+                "The book's folder is deleted, but removing the last report from Kavita needs "
+                "an admin Kavita key; Kavita drops it when the next report is published."
+            )
+        except KavitaMcpError as e:
+            return (
+                f"The book's folder is deleted, but Kavita could not remove it ({e}); "
+                "it drops it when the next report is published."
+            )
+        return "The book's folder is deleted and Kavita has removed it."
 
     async def health(self) -> dict:
         """Kavita answers, the Reports library exists, the upload service lists its folder."""

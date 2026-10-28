@@ -195,7 +195,7 @@ async def test_delete_removes_folder():
     files.files["/Reports/q3/q3.epub"] = SAMPLE
     sid = kavita.put("/reports/q3")
     result = await publisher.delete(sid, confirm=True, scan_now=True)
-    assert files.files == {}
+    assert list(files.files) == ["/Reports/.kavita-mcp"]  # only the placeholder is left
     assert sid not in kavita.series_by_id
     assert result["deleted"] is True
 
@@ -280,3 +280,81 @@ async def test_add_scan_now_repeats_a_dropped_scan_request():
     result = await publisher.add(markdown="# Hi", title="Q3 Report", scan_now=True)
     assert result["series_id"] is not None
     assert kavita.scans == 3
+
+
+async def test_update_collection_failure_leaves_epub_unchanged():
+    publisher, kavita, files = make()
+    path = "/Reports/weekly-digest/weekly-digest.epub"
+    files.files[path] = SAMPLE
+    sid = kavita.put("/reports/weekly-digest")
+    kavita.collection_error = KavitaUnreachable("Kavita is unreachable")
+    with pytest.raises(KavitaUnreachable):
+        await publisher.update(sid, collection="Research")
+    assert read_info(files.files[path]).collection == "Weekly"
+    kavita.collection_error = None  # a retry settles on the right state
+    await publisher.update(sid, collection="Research")
+    assert kavita.removed == [("Weekly", sid)]
+    assert kavita.added == [("Research", sid)]
+    assert read_info(files.files[path]).collection == "Research"
+
+
+async def test_delete_keeps_reports_folder_non_empty():
+    # Kavita aborts every scan of a library whose root folder is empty, so the
+    # last report's series would stay forever (ScannerService.CheckMounts).
+    publisher, kavita, files = make()
+    files.files["/Reports/q3/q3.epub"] = SAMPLE
+    sid = kavita.put("/reports/q3")
+    await publisher.delete(sid, confirm=True)
+    assert list(files.files) == ["/Reports/.kavita-mcp"]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [KavitaUnreachable("Kavita is unreachable"), KavitaForbidden("needs an admin key")],
+)
+async def test_delete_scan_now_failure_note_says_deleted(error):
+    publisher, kavita, files = make()
+    files.files["/Reports/q3/q3.epub"] = SAMPLE
+    sid = kavita.put("/reports/q3")
+    # another report remains, so the delete goes through the library scan
+    files.files["/Reports/other/other.epub"] = SAMPLE
+    kavita.put("/reports/other")
+    kavita.scan_error = error
+    result = await publisher.delete(sid, confirm=True, scan_now=True)
+    assert "in place" not in result["note"]
+    assert "deleted" in result["note"]
+
+
+# Kavita removes nothing in a scan that finds no series at all, so the last
+# report's series would stay: kavita-mcp deletes it in Kavita itself.
+
+
+async def test_delete_last_report_deletes_series_in_kavita():
+    publisher, kavita, files = make()
+    files.files["/Reports/q3/q3.epub"] = SAMPLE
+    sid = kavita.put("/reports/q3")
+    result = await publisher.delete(sid, confirm=True)
+    assert kavita.deleted == [sid]
+    assert sid not in kavita.series_by_id
+    assert "removed" in result["note"]
+
+
+async def test_delete_with_other_reports_leaves_it_to_the_scan():
+    publisher, kavita, files = make()
+    files.files["/Reports/q3/q3.epub"] = SAMPLE
+    files.files["/Reports/other/other.epub"] = SAMPLE
+    sid = kavita.put("/reports/q3")
+    kavita.put("/reports/other")
+    await publisher.delete(sid, confirm=True, scan_now=True)
+    assert kavita.deleted == []
+    assert sid not in kavita.series_by_id
+
+
+async def test_delete_last_report_without_admin_says_so():
+    publisher, kavita, files = make()
+    files.files["/Reports/q3/q3.epub"] = SAMPLE
+    sid = kavita.put("/reports/q3")
+    kavita.scan_error = KavitaForbidden("Kavita refused this: it needs an admin key")
+    result = await publisher.delete(sid, confirm=True)
+    assert "deleted" in result["note"] and "admin" in result["note"]
+    assert "next report" in result["note"]

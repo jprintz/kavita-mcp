@@ -75,7 +75,7 @@ def build_epub(
         (work / "input.md").write_text(markdown, encoding="utf-8")
         (work / "meta.yaml").write_text(json.dumps(_pandoc_metadata(meta)), encoding="utf-8")
         package = resources.files("kavita_mcp")
-        (work / "images.lua").write_bytes(package.joinpath("images.lua").read_bytes())
+        (work / "safe.lua").write_bytes(package.joinpath("safe.lua").read_bytes())
         (work / "data").mkdir()
         command = [
             pandoc,
@@ -88,7 +88,7 @@ def build_epub(
             "--toc",
             "--split-level=1",
             "--epub-title-page=false",
-            "--lua-filter=images.lua",
+            "--lua-filter=safe.lua",
             "--metadata-file=meta.yaml",
             "--output=out.epub",
             "input.md",

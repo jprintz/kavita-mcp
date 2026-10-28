@@ -82,3 +82,17 @@ def test_slug_from_kavita_folder(folder, expected):
 )
 def test_kavita_would_split(title, split):
     assert kavita_would_split(title) is split
+
+
+def test_slugify_transliterates_letters_without_decomposition():
+    assert slugify("Ørsted Æble Straße Łódź đ") == "orsted-aeble-strasse-lodz-d"
+
+
+def test_slugify_keeps_titles_in_other_scripts_apart():
+    # Dropping every Cyrillic letter would make both "2026": the second would
+    # silently replace the first.
+    a, b = slugify("Отчёт 2026"), slugify("Бюджет 2026")
+    assert a != b
+    assert a.startswith("2026-") and b.startswith("2026-")
+    assert slugify("Отчёт 2026") == a  # stable
+    assert len(slugify("Отчёт " * 40)) <= 80

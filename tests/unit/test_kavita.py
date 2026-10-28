@@ -200,3 +200,9 @@ async def test_server_time_from_date_header():
         {("GET", "/api/health"): lambda r: httpx.Response(200, headers={"Date": date})}
     )
     assert await client.server_time() == datetime(2026, 10, 28, 10, 39, 13, tzinfo=UTC)
+
+
+async def test_delete_series():
+    client, transport = make({("DELETE", "/api/Series/7"): lambda r: httpx.Response(200)})
+    await client.delete_series(7)
+    assert transport.last("DELETE", "/api/Series/7")

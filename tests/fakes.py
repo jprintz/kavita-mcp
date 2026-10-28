@@ -40,7 +40,9 @@ class FakeKavita:
         self.scan_error: Exception | None = None
         self.scans = 0
         self.drop_scans = 0  # Kavita drops a scan request while a scan runs: ignore this many
+        self.collection_error: Exception | None = None
         self.series_scans: list[tuple[int, int]] = []
+        self.deleted: list[int] = []
         self.series_by_id: dict[int, dict] = {}
         self.added: list[tuple[str, int]] = []
         self.removed: list[tuple[str, int]] = []
@@ -88,13 +90,21 @@ class FakeKavita:
             return
         if not self.imports:
             return
-        folders = {"/reports/" + p.split("/")[2] for p in self.files.files}
+        folders = {"/reports/" + p.split("/")[2] for p in self.files.files if p.count("/") == 3}
+        if not folders:
+            return  # like Kavita: a scan that finds no series removes none either
         for sid, s in list(self.series_by_id.items()):
             if s["libraryId"] == REPORTS_ID and s["folderPath"] not in folders:
                 del self.series_by_id[sid]
         for folder in folders:
             if await self.series_by_folder(folder) is None:
                 self.put(folder)
+
+    async def delete_series(self, series_id: int) -> None:
+        if self.scan_error:
+            raise self.scan_error
+        self.deleted.append(series_id)
+        self.series_by_id.pop(series_id, None)
 
     async def scan_series(self, library_id: int, series_id: int) -> None:
         if self.scan_error:
@@ -107,8 +117,12 @@ class FakeKavita:
         return datetime.now(UTC)
 
     async def add_to_collection(self, series_id: int, title: str) -> int:
+        if self.collection_error:
+            raise self.collection_error
         self.added.append((title, series_id))
         return 1
 
     async def remove_from_collection(self, series_id: int, title: str) -> None:
+        if self.collection_error:
+            raise self.collection_error
         self.removed.append((title, series_id))

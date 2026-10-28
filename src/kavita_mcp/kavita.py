@@ -244,3 +244,8 @@ class KavitaClient:
         r = await self._request("GET", "/api/health")
         date = r.headers.get("Date")
         return parsedate_to_datetime(date) if date else datetime.now(UTC)
+
+    async def delete_series(self, series_id: int) -> None:
+        """Remove a series from Kavita (admin). Only once its files are gone: a scan
+        would bring it back otherwise."""
+        await self._request("DELETE", f"/api/Series/{series_id}")
