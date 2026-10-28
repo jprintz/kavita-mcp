@@ -53,7 +53,7 @@ up() {
 start_mcp() { # name host-port key
   docker rm -f "$1" >/dev/null 2>&1 || true
   docker run -d --name "$1" --network "$NET" -p "127.0.0.1:$2:8000" \
-    --read-only --cap-drop ALL --security-opt no-new-privileges \
+    --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
     -e KAVITA_API_KEY="$3" -e KAVITA_PUBLIC_URL=http://127.0.0.1:5055 -e SCAN_TIMEOUT_SECONDS=60 \
     kavita-mcp:dev >/dev/null
 }

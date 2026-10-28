@@ -10,6 +10,8 @@ keywords = ["mcp", "kavita", "epub", "opds", "llm"]
 dependencies = [
     "mcp>=2.3,<3",
     "httpx>=0.28",
+    "pydantic>=2",
+    "starlette",
 ]
 
 [project.optional-dependencies]

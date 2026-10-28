@@ -1,0 +1,25 @@
+name: integration
+
+# The acceptance tests against a throwaway Kavita 0.9.1 + File Browser, laid out
+# like the VPS (scripts/throwaway.sh). Started by hand, e.g. before a Kavita bump
+# in vps-apps: it takes a few minutes and isn't needed on every push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.14"
+      - run: uv sync --all-extras --frozen
+      - run: scripts/throwaway.sh up
+      - run: scripts/throwaway.sh mcp
+      - run: uv run pytest -m integration -v
+      - if: always()
+        run: scripts/throwaway.sh down
