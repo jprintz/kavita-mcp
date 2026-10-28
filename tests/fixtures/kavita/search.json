@@ -1,0 +1,59 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/Search/search",
+    "params": {
+      "queryString": "weekly",
+      "includeChapterAndFiles": "false"
+    },
+    "json": null
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "libraries": [],
+    "series": [
+      {
+        "seriesId": 3,
+        "name": "Weekly Digest",
+        "originalName": "Weekly Digest",
+        "sortName": "Weekly Digest",
+        "localizedName": "",
+        "format": 3,
+        "libraryName": "Reports",
+        "libraryId": 2,
+        "releaseYear": 2026,
+        "volumeCount": 1,
+        "chapterCount": 1
+      }
+    ],
+    "collections": [
+      {
+        "id": 1,
+        "title": "Weekly",
+        "summary": "",
+        "promoted": false,
+        "ageRating": 0,
+        "coverImage": null,
+        "primaryColor": null,
+        "secondaryColor": null,
+        "coverImageLocked": false,
+        "itemCount": 1,
+        "owner": "kadmin",
+        "lastSyncUtc": "0001-01-01T00:00:00",
+        "source": 0,
+        "sourceUrl": null,
+        "totalSourceCount": 0,
+        "missingSeriesFromSource": null
+      }
+    ],
+    "readingLists": [],
+    "persons": [],
+    "genres": [],
+    "tags": [],
+    "files": [],
+    "chapters": [],
+    "bookmarks": [],
+    "annotations": []
+  }
+}

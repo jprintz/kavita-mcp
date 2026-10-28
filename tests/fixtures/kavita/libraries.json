@@ -1,0 +1,68 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/Library/libraries",
+    "params": null,
+    "json": null
+  },
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "lastScanned": "0001-01-01T00:00:00",
+      "coverImage": null,
+      "folderWatching": true,
+      "includeInDashboard": true,
+      "includeInRecommended": true,
+      "manageCollections": true,
+      "manageReadingLists": true,
+      "includeInSearch": true,
+      "allowScrobbling": false,
+      "folders": [
+        "/books"
+      ],
+      "collapseSeriesRelationships": false,
+      "libraryFileTypes": [
+        2
+      ],
+      "excludePatterns": [],
+      "allowMetadataMatching": false,
+      "enableMetadata": true,
+      "removePrefixForSortName": false,
+      "inheritWebLinksFromFirstChapter": false,
+      "defaultLanguage": "",
+      "metadataProvider": 2,
+      "id": 1,
+      "name": "Books",
+      "type": 2
+    },
+    {
+      "lastScanned": "2026-10-28T10:23:29.3885357",
+      "coverImage": null,
+      "folderWatching": true,
+      "includeInDashboard": true,
+      "includeInRecommended": true,
+      "manageCollections": true,
+      "manageReadingLists": true,
+      "includeInSearch": true,
+      "allowScrobbling": false,
+      "folders": [
+        "/reports"
+      ],
+      "collapseSeriesRelationships": false,
+      "libraryFileTypes": [
+        2
+      ],
+      "excludePatterns": [],
+      "allowMetadataMatching": false,
+      "enableMetadata": true,
+      "removePrefixForSortName": false,
+      "inheritWebLinksFromFirstChapter": false,
+      "defaultLanguage": "",
+      "metadataProvider": 2,
+      "id": 2,
+      "name": "Reports",
+      "type": 2
+    }
+  ]
+}
