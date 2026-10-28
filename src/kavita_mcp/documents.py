@@ -245,3 +245,18 @@ class Publisher:
         else:
             note = "Kavita's folder watcher removes it in about 6 minutes."
         return {"series_id": series_id, "slug": loc.slug, "deleted": True, "note": note}
+
+    async def health(self) -> dict:
+        """Kavita answers, the Reports library exists, the upload service lists its folder."""
+        kavita = await self._kavita.health()
+        try:
+            await self.reports_library()
+            library = True
+        except KavitaMcpError:
+            library = False
+        try:
+            await self._files.list_dir(self._s.filebrowser_reports_dir + "/")
+            upload = True
+        except KavitaMcpError:
+            upload = False
+        return {"kavita": kavita, "library": library, "upload": upload}

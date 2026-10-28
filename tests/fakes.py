@@ -59,6 +59,9 @@ class FakeKavita:
         }
         return self.next_id
 
+    async def health(self) -> bool:
+        return True
+
     async def libraries(self) -> list[dict]:
         return [
             {"id": BOOKS_ID, "name": "Books", "folders": ["/books"]},
