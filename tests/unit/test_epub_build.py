@@ -15,9 +15,7 @@ from kavita_mcp.epub import (
 DC = "{http://purl.org/dc/elements/1.1/}"
 OPF = "{http://www.idpf.org/2007/opf}"
 BIG = 10 * 1024 * 1024
-PNG_1PX = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-)
+PNG_1PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 META = DocumentMeta(
     title="Åsa's årsrapport",
@@ -53,9 +51,7 @@ def entries(epub: bytes) -> dict[str, bytes]:
 
 
 def xhtml_text(epub: bytes) -> str:
-    return "".join(
-        v.decode("utf-8") for k, v in entries(epub).items() if k.endswith(".xhtml")
-    )
+    return "".join(v.decode("utf-8") for k, v in entries(epub).items() if k.endswith(".xhtml"))
 
 
 def test_opf_metadata(pandoc_bin):
@@ -134,8 +130,13 @@ def test_epubcheck_valid(pandoc_bin, epubcheck):
 def test_metadata_text_is_literal(pandoc_bin):
     weird = "C# *notes* [draft] 'quoted' \"q\" a_b `code` <b> 50% & more\\"
     meta = DocumentMeta(
-        **{**META.__dict__, "title": weird, "author": "Ann *A*", "summary": weird,
-           "collection": "R&D 'x'"}
+        **{
+            **META.__dict__,
+            "title": weird,
+            "author": "Ann *A*",
+            "summary": weird,
+            "collection": "R&D 'x'",
+        }
     )
     _, root = read_opf(build(meta=meta, pandoc=pandoc_bin))
     assert titles(root) == {"main": weird, "collection": "R&D 'x'"}

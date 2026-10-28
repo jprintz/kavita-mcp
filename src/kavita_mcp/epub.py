@@ -172,3 +172,126 @@ def read_opf(epub: bytes) -> tuple[str, ElementTree.Element]:
             return path, ElementTree.fromstring(z.read(path))
     except (zipfile.BadZipFile, KeyError, ElementTree.ParseError):
         raise InvalidEpub("The file is not a readable EPUB") from None
+
+
+OPF_NS = "http://www.idpf.org/2007/opf"
+DC_NS = "http://purl.org/dc/elements/1.1/"
+OPF = f"{{{OPF_NS}}}"
+DC = f"{{{DC_NS}}}"
+# Serialise the package document with its usual prefixes (OPF as the default
+# namespace, dc:) rather than ns0:/ns1:.
+ElementTree.register_namespace("", OPF_NS)
+ElementTree.register_namespace("dc", DC_NS)
+
+
+class _Keep:
+    def __repr__(self) -> str:
+        return "KEEP"
+
+
+KEEP = _Keep()
+
+
+@dataclass(frozen=True)
+class EpubInfo:
+    title: str
+    author: str | None
+    summary: str | None
+    collection: str | None
+    language: str | None
+
+
+def _title_types(metadata: ElementTree.Element) -> dict[str, str]:
+    """dc:title id -> its title-type refinement (main, collection, ...)."""
+    return {
+        m.get("refines", "").lstrip("#"): (m.text or "")
+        for m in metadata.findall(f"{OPF}meta")
+        if m.get("property") == "title-type"
+    }
+
+
+def _collection_title(metadata: ElementTree.Element) -> ElementTree.Element | None:
+    types = _title_types(metadata)
+    for t in metadata.findall(f"{DC}title"):
+        if types.get(t.get("id", "")) == "collection":
+            return t
+    return None
+
+
+def _metadata(root: ElementTree.Element) -> ElementTree.Element:
+    metadata = root.find(f"{OPF}metadata")
+    if metadata is None:
+        raise InvalidEpub("The EPUB's package document has no metadata")
+    return metadata
+
+
+def read_info(epub: bytes) -> EpubInfo:
+    _, root = read_opf(epub)
+    metadata = _metadata(root)
+    types = _title_types(metadata)
+    titles = metadata.findall(f"{DC}title")
+    main = next((t for t in titles if types.get(t.get("id", ""), "main") == "main"), None)
+    collection = _collection_title(metadata)
+
+    def text(tag: str) -> str | None:
+        el = metadata.find(f"{DC}{tag}")
+        return el.text if el is not None and el.text else None
+
+    return EpubInfo(
+        title=(main.text or "") if main is not None else "",
+        author=text("creator"),
+        summary=text("description"),
+        collection=collection.text if collection is not None else None,
+        language=text("language"),
+    )
+
+
+def rewrite_metadata(epub: bytes, *, summary=KEEP, collection=KEEP) -> bytes:
+    """A copy of the EPUB with a new summary and/or collection ("" or None removes it).
+
+    Only the package document changes; every other entry is copied byte for byte.
+    """
+    opf_path, root = read_opf(epub)
+    metadata = _metadata(root)
+
+    if summary is not KEEP:
+        for el in metadata.findall(f"{DC}description"):
+            metadata.remove(el)
+        if summary:
+            el = ElementTree.Element(f"{DC}description")
+            el.text = summary
+            _insert_after_titles(metadata, el)
+
+    if collection is not KEEP:
+        old = _collection_title(metadata)
+        if old is not None:
+            ref = "#" + old.get("id", "")
+            for m in metadata.findall(f"{OPF}meta"):
+                if m.get("refines") == ref:
+                    metadata.remove(m)
+            metadata.remove(old)
+        if collection:
+            title = ElementTree.Element(f"{DC}title", {"id": "kavita-mcp-collection"})
+            title.text = collection
+            refine = ElementTree.Element(
+                f"{OPF}meta", {"refines": "#kavita-mcp-collection", "property": "title-type"}
+            )
+            refine.text = "collection"
+            _insert_after_titles(metadata, title, refine)
+
+    xml = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+    return replace_entries(epub, {opf_path: xml})
+
+
+def _insert_after_titles(metadata: ElementTree.Element, *elements: ElementTree.Element) -> None:
+    children = list(metadata)
+    last = max(
+        (
+            i
+            for i, c in enumerate(children)
+            if c.tag == f"{DC}title" or c.get("refines", "").startswith("#epub-title")
+        ),
+        default=len(children) - 1,
+    )
+    for offset, el in enumerate(elements, start=1):
+        metadata.insert(last + offset, el)
