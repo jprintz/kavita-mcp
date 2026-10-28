@@ -205,3 +205,78 @@ async def test_delete_refuses_books_series():
     sid = kavita.put("/books/q3", library_id=BOOKS_ID)
     with pytest.raises(NotAManagedReport):
         await publisher.delete(sid, confirm=True)
+
+
+# Kavita re-reads a book only when the file's mtime, cut to the minute, is later
+# than its last scan (0.9.1.4, CacheHelper.IsFileUnmodifiedSinceCreationOrLastScan):
+# a change within the same minute is ignored unless the scan is forced.
+
+
+def scanned(kavita, sid, seconds_ago: float):
+    from datetime import UTC, datetime, timedelta
+
+    when = datetime.now(UTC) - timedelta(seconds=seconds_ago)
+    kavita.series_by_id[sid]["lastFolderScanned"] = when.replace(tzinfo=None).isoformat()
+
+
+async def test_update_scan_now_forces_series_scan():
+    publisher, kavita, files = make()
+    files.files["/Reports/weekly-digest/weekly-digest.epub"] = SAMPLE
+    sid = kavita.put("/reports/weekly-digest")
+    scanned(kavita, sid, 3600)
+    result = await publisher.update(sid, summary="x", scan_now=True)
+    assert kavita.series_scans == [(2, sid)]
+    assert "re-reading" in result["note"]
+
+
+async def test_update_soon_after_scan_forces_series_scan():
+    publisher, kavita, files = make()
+    files.files["/Reports/weekly-digest/weekly-digest.epub"] = SAMPLE
+    sid = kavita.put("/reports/weekly-digest")
+    scanned(kavita, sid, 5)
+    await publisher.update(sid, summary="x")
+    assert kavita.series_scans == [(2, sid)]
+
+
+async def test_update_long_after_scan_relies_on_watcher():
+    publisher, kavita, files = make()
+    files.files["/Reports/weekly-digest/weekly-digest.epub"] = SAMPLE
+    sid = kavita.put("/reports/weekly-digest")
+    scanned(kavita, sid, 3600)
+    result = await publisher.update(sid, summary="x")
+    assert kavita.series_scans == []
+    assert "about 6 minutes" in result["note"]
+
+
+async def test_republish_soon_after_scan_forces_series_scan():
+    publisher, kavita, files = make()
+    files.files["/Reports/q3-report/q3-report.epub"] = SAMPLE
+    sid = kavita.put("/reports/q3-report")
+    scanned(kavita, sid, 5)
+    result = await publisher.add(markdown="# Fixed", title="Q3 Report")
+    assert kavita.series_scans == [(2, sid)]
+    assert result["series_id"] == sid
+
+
+async def test_forced_scan_forbidden_note():
+    publisher, kavita, files = make()
+    files.files["/Reports/weekly-digest/weekly-digest.epub"] = SAMPLE
+    sid = kavita.put("/reports/weekly-digest")
+    scanned(kavita, sid, 5)
+    kavita.scan_error = KavitaForbidden("Kavita refused this: it needs an admin key")
+    result = await publisher.update(sid, summary="x")
+    assert "admin" in result["note"] and "minute" in result["note"]
+
+
+async def test_add_scan_now_repeats_a_dropped_scan_request():
+    # Kavita drops a library-scan request while another scan of that library runs
+    # ("A duplicate request for Library Scan ... Skipping", TaskScheduler.cs).
+    files = FakeFiles()
+    kavita = FakeKavita(files)
+    kavita.drop_scans = 2
+    publisher = Publisher(
+        SETTINGS, kavita, files, build=fake_build, poll_interval=0.01, rescan_interval=0.05
+    )
+    result = await publisher.add(markdown="# Hi", title="Q3 Report", scan_now=True)
+    assert result["series_id"] is not None
+    assert kavita.scans == 3

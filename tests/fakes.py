@@ -39,6 +39,8 @@ class FakeKavita:
         self.imports = imports  # False: scans never pick anything up
         self.scan_error: Exception | None = None
         self.scans = 0
+        self.drop_scans = 0  # Kavita drops a scan request while a scan runs: ignore this many
+        self.series_scans: list[tuple[int, int]] = []
         self.series_by_id: dict[int, dict] = {}
         self.added: list[tuple[str, int]] = []
         self.removed: list[tuple[str, int]] = []
@@ -56,6 +58,7 @@ class FakeKavita:
             "pagesRead": 0,
             "wordCount": 100,
             "created": "2026-10-28T10:00:00",
+            "lastFolderScanned": "2000-01-01T00:00:00",
         }
         return self.next_id
 
@@ -80,6 +83,9 @@ class FakeKavita:
         if self.scan_error:
             raise self.scan_error
         self.scans += 1
+        if self.drop_scans:
+            self.drop_scans -= 1
+            return
         if not self.imports:
             return
         folders = {"/reports/" + p.split("/")[2] for p in self.files.files}
@@ -89,6 +95,16 @@ class FakeKavita:
         for folder in folders:
             if await self.series_by_folder(folder) is None:
                 self.put(folder)
+
+    async def scan_series(self, library_id: int, series_id: int) -> None:
+        if self.scan_error:
+            raise self.scan_error
+        self.series_scans.append((library_id, series_id))
+
+    async def server_time(self):
+        from datetime import UTC, datetime
+
+        return datetime.now(UTC)
 
     async def add_to_collection(self, series_id: int, title: str) -> int:
         self.added.append((title, series_id))

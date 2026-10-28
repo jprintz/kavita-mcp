@@ -6,6 +6,8 @@ enum numbers were checked against a live 0.9.1.4.
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -228,3 +230,17 @@ class KavitaClient:
 
     async def scan_library(self, library_id: int) -> None:
         await self._request("POST", "/api/Library/scan", params={"libraryId": library_id})
+
+    async def scan_series(self, library_id: int, series_id: int) -> None:
+        """Re-read one series' files now (admin). Kavita always forces this scan."""
+        await self._request(
+            "POST",
+            "/api/Series/scan",
+            json_body={"libraryId": library_id, "seriesId": series_id, "forceUpdate": True},
+        )
+
+    async def server_time(self) -> datetime:
+        """Kavita's clock, from the Date header of a cheap request."""
+        r = await self._request("GET", "/api/health")
+        date = r.headers.get("Date")
+        return parsedate_to_datetime(date) if date else datetime.now(UTC)

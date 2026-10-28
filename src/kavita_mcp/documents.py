@@ -10,7 +10,7 @@ import asyncio
 import time
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 from kavita_mcp.config import Settings
 from kavita_mcp.epub import KEEP, DocumentMeta, build_epub, read_info, rewrite_metadata
@@ -22,6 +22,8 @@ from kavita_mcp.slug import InvalidTitle, locate, slug_from_kavita_folder, slugi
 
 MAX_TITLE = 200
 WATCHER_NOTE = "Kavita's folder watcher picks it up in about 6 minutes."
+# A book Kavita scanned less than this long ago needs a forced re-read (see _reread).
+RECENT_SCAN = timedelta(minutes=2)
 
 
 class NotAManagedReport(KavitaMcpError):
@@ -55,6 +57,7 @@ class Publisher:
         build: Callable[..., bytes] = build_epub,
         today: Callable[[], date] = date.today,
         poll_interval: float = 1.0,
+        rescan_interval: float = 5.0,
     ):
         self._s = settings
         self._kavita = kavita
@@ -62,6 +65,7 @@ class Publisher:
         self._build = build
         self._today = today
         self._poll = poll_interval
+        self._rescan = rescan_interval
         self._library: dict | None = None
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -102,11 +106,10 @@ class Publisher:
             )
         return series, self._locate(slug)
 
-    async def _scan(self, folder: str, *, present: bool | None) -> tuple[dict | None, str]:
+    async def _scan(self, folder: str, *, present: bool) -> tuple[dict | None, str]:
         """Scan the Reports library now; wait until the folder's series is present/absent.
 
-        present=None: only start the scan. Kavita errors become the note: the file
-        itself is already in place.
+        Kavita errors become the note: the file itself is already in place.
         """
         try:
             library = await self.reports_library()
@@ -121,9 +124,8 @@ class Publisher:
                 None,
                 f"The file is in place, but Kavita could not scan it now ({e}). {WATCHER_NOTE}",
             )
-        if present is None:
-            return None, "Kavita is rescanning it now; the change shows within seconds."
         deadline = time.monotonic() + self._s.scan_timeout_seconds
+        requested = time.monotonic()
         while True:
             try:
                 series = await self._kavita.series_by_folder(folder)
@@ -144,7 +146,54 @@ class Publisher:
                         "it will on its next scan."
                     )
                 return series, f"The folder is gone, but Kavita still lists it after {timeout}."
+            if time.monotonic() - requested >= self._rescan:
+                # Kavita drops a scan request while a scan of the library is still
+                # running ("duplicate request ... Skipping"), which may have missed
+                # this file: ask again.
+                requested = time.monotonic()
+                try:
+                    await self._kavita.scan_library(library["id"])
+                except KavitaMcpError:
+                    pass
             await asyncio.sleep(self._poll)
+
+    async def _recently_scanned(self, series: dict) -> bool:
+        try:
+            last = datetime.fromisoformat(series.get("lastFolderScanned") or "")
+        except ValueError:
+            return False
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)  # Kavita's local time: UTC in its image
+        try:
+            now = await self._kavita.server_time()
+        except KavitaMcpError:
+            now = datetime.now(UTC)
+        return now - last < RECENT_SCAN
+
+    async def _reread(self, series: dict, scan_now: bool) -> str:
+        """After a book's file changed: have Kavita re-read it now when needed.
+
+        Kavita 0.9.1 re-reads a book only when the file's mtime, cut to the minute,
+        is later than its last scan (CacheHelper.IsFileUnmodifiedSinceCreationOrLastScan),
+        so a change within the same minute is lost unless the scan is forced. Force
+        it on scan_now, or when Kavita scanned the book less than two minutes ago;
+        otherwise the folder watcher picks the change up.
+        """
+        if not scan_now and not await self._recently_scanned(series):
+            return WATCHER_NOTE
+        try:
+            await self._kavita.scan_series(series["libraryId"], series["id"])
+        except KavitaForbidden:
+            return (
+                "The file is in place, but re-reading it now needs an admin Kavita key. "
+                "Kavita ignores a change made within a minute of its last scan of a book, "
+                "so it may show the old version until its next full rescan."
+            )
+        except KavitaMcpError as e:
+            return (
+                f"The file is in place, but Kavita could not re-read it now ({e}). {WATCHER_NOTE}"
+            )
+        return "Kavita is re-reading it now; the change shows within seconds."
 
     async def add(
         self,
@@ -180,15 +229,18 @@ class Publisher:
                 max_image_bytes=self._s.max_image_bytes,
             )
             await self._files.upload(loc.fb_file, epub)
-            if scan_now:
+            series = None
+            if existed:
+                try:
+                    series = await self._kavita.series_by_folder(loc.kavita_dir)
+                except KavitaError:
+                    series = None
+            if series:
+                note = await self._reread(series, scan_now)
+            elif scan_now:
                 series, note = await self._scan(loc.kavita_dir, present=True)
             else:
-                series, note = None, WATCHER_NOTE
-                if existed:
-                    try:
-                        series = await self._kavita.series_by_folder(loc.kavita_dir)
-                    except KavitaError:
-                        series = None
+                note = WATCHER_NOTE
         return {
             "status": "updated" if existed else "published",
             "slug": loc.slug,
@@ -204,7 +256,7 @@ class Publisher:
     ) -> dict:
         if summary is KEEP and collection is KEEP:
             raise NothingToChange("Give a summary or a collection to change")
-        _, loc = await self._managed(series_id)
+        series, loc = await self._managed(series_id)
         summary = summary if summary is KEEP else _clean(summary)
         collection = collection if collection is KEEP else _clean(collection)
         async with self._locks[loc.slug]:
@@ -220,10 +272,7 @@ class Publisher:
                 if collection:
                     await self._kavita.add_to_collection(series_id, collection)
         info = read_info(new)
-        if scan_now:
-            _, note = await self._scan(loc.kavita_dir, present=None)
-        else:
-            note = WATCHER_NOTE
+        note = await self._reread(series, scan_now)
         return {
             "series_id": series_id,
             "slug": loc.slug,

@@ -182,3 +182,21 @@ async def test_health():
     assert await client.health() is True
     down, _ = make({("GET", "/api/health"): lambda r: httpx.Response(503)})
     assert await down.health() is False
+
+
+async def test_scan_series_forces():
+    client, transport = make({("POST", "/api/Series/scan"): lambda r: httpx.Response(200)})
+    await client.scan_series(2, 7)
+    assert transport.bodies("POST", "/api/Series/scan") == [
+        {"libraryId": 2, "seriesId": 7, "forceUpdate": True}
+    ]
+
+
+async def test_server_time_from_date_header():
+    from datetime import UTC, datetime
+
+    date = "Wed, 28 Oct 2026 10:39:13 GMT"
+    client, _ = make(
+        {("GET", "/api/health"): lambda r: httpx.Response(200, headers={"Date": date})}
+    )
+    assert await client.server_time() == datetime(2026, 10, 28, 10, 39, 13, tzinfo=UTC)
