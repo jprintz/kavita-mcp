@@ -1,0 +1,51 @@
+[project]
+name = "kavita-mcp"
+version = "0.1.0"
+description = "MCP server that publishes markdown as EPUBs into a Kavita library and reads your reading state"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Julius Printz" }]
+keywords = ["mcp", "kavita", "epub", "opds", "llm"]
+dependencies = [
+    "mcp>=2.3,<3",
+    "httpx>=0.28",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9",
+    "pytest-asyncio>=1.3",
+    "ruff>=0.14",
+]
+
+[project.scripts]
+kavita-mcp = "kavita_mcp.server:main"
+
+[project.urls]
+Repository = "https://github.com/jprintz/kavita-mcp"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kavita_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "integration: needs the throwaway Kavita + File Browser and a running kavita-mcp (make integration)",
+    "watch: waits for Kavita's folder watcher, about 7 minutes (pytest -m watch)",
+    "epubcheck: validates EPUBs with epubcheck (needs java and EPUBCHECK_JAR)",
+]
+addopts = "-m 'not integration and not watch'"
