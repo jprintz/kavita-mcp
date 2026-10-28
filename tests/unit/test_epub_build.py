@@ -142,3 +142,34 @@ def test_metadata_text_is_literal(pandoc_bin):
     assert titles(root) == {"main": weird, "collection": "R&D 'x'"}
     assert [c.text for c in root.iter(f"{DC}creator")] == ["Ann *A*"]
     assert root.find(f".//{DC}description").text == weird
+
+
+def calibre_series(root) -> dict[str, str]:
+    return {
+        m.get("name"): m.get("content")
+        for m in root.iter(f"{OPF}meta")
+        if (m.get("name") or "").startswith("calibre:series")
+    }
+
+
+def test_volume_title_gets_calibre_series(pandoc_bin):
+    # Kavita would cut "Report v2 Final" to series "Report" and merge it with any
+    # other "Report vN ..." (checked live on 0.9.1.4). An explicit series with
+    # Kavita's loose-leaf index keeps the full title and a single book.
+    meta = DocumentMeta(**{**META.__dict__, "title": "Report v2 Final"})
+    _, root = read_opf(build(meta=meta, pandoc=pandoc_bin))
+    assert calibre_series(root) == {
+        "calibre:series": "Report v2 Final",
+        "calibre:series_index": "-100000",
+    }
+
+
+def test_plain_title_has_no_calibre_series(pandoc_bin):
+    _, root = read_opf(build(pandoc=pandoc_bin))
+    assert calibre_series(root) == {}
+
+
+@pytest.mark.epubcheck
+def test_volume_title_epub_valid(pandoc_bin, epubcheck):
+    meta = DocumentMeta(**{**META.__dict__, "title": "Status Report Vol. 2"})
+    epubcheck(build(meta=meta, pandoc=pandoc_bin))

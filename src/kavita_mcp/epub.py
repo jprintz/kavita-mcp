@@ -14,6 +14,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from kavita_mcp.errors import KavitaMcpError
+from kavita_mcp.slug import kavita_would_split
 
 DATA_URI_RE = re.compile(r"data:image/[A-Za-z0-9.+-]+;base64,([A-Za-z0-9+/=\s]+)")
 
@@ -107,7 +108,29 @@ def build_epub(
     # --sandbox ignores --css and the data dir, so pandoc writes its built-in
     # stylesheet; swap in ours.
     css = package.joinpath("epub.css").read_bytes()
-    return replace_entries(epub, {n: css for n in _names(epub) if n.endswith(".css")})
+    new = {n: css for n in _names(epub) if n.endswith(".css")}
+    if kavita_would_split(meta.title):
+        opf_path, root = read_opf(epub)
+        new[opf_path] = _with_explicit_series(root, meta.title)
+    return replace_entries(epub, new)
+
+
+# Kavita's "loose leaf" volume number (ParserConstants.LooseLeafVolume, 0.9.1.4).
+LOOSE_LEAF_INDEX = "-100000"
+
+
+def _with_explicit_series(root: ElementTree.Element, title: str) -> bytes:
+    """The package document with calibre:series = the title, as a loose-leaf book.
+
+    Kavita cuts a title with a volume marker ("Report v2 Final" -> series
+    "Report", volume 2) and merges every such book into one series. An explicit
+    series with the loose-leaf index keeps the full title and a single book
+    (checked live on 0.9.1.4). Only for those titles: KOReader shows the index.
+    """
+    metadata = _metadata(root)
+    for name, content in (("calibre:series", title), ("calibre:series_index", LOOSE_LEAF_INDEX)):
+        metadata.append(ElementTree.Element(f"{OPF}meta", {"name": name, "content": content}))
+    return ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def _literal(text: str) -> str:
