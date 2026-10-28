@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/Collection/all-series",
+    "params": {
+      "seriesId": 3
+    },
+    "json": null
+  },
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "id": 1,
+      "title": "Weekly",
+      "summary": "",
+      "promoted": false,
+      "ageRating": 0,
+      "coverImage": null,
+      "primaryColor": null,
+      "secondaryColor": null,
+      "coverImageLocked": false,
+      "itemCount": 1,
+      "owner": "kadmin",
+      "lastSyncUtc": "0001-01-01T00:00:00",
+      "source": 0,
+      "sourceUrl": null,
+      "totalSourceCount": 0,
+      "missingSeriesFromSource": null
+    }
+  ]
+}

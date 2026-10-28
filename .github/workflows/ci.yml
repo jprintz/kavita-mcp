@@ -1,0 +1,102 @@
+name: ci
+
+# Tests on every push and pull request. Images go to GHCR from main
+# (ghcr.io/jprintz/kavita-mcp:main and :sha-<commit>) and from version tags
+# (v0.1.0 -> :0.1.0, :0.1). The VPS pins version tags.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  PANDOC_IMAGE: docker.io/pandoc/minimal:3.11.0-static
+  EPUBCHECK_VERSION: 5.4.0
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.14"
+      - name: pandoc (the image's static binary)
+        run: |
+          id=$(docker create "$PANDOC_IMAGE")
+          docker cp "$id:/usr/local/bin/pandoc" "$RUNNER_TEMP/pandoc"
+          docker rm "$id" >/dev/null
+          echo "PANDOC=$RUNNER_TEMP/pandoc" >> "$GITHUB_ENV"
+      - name: epubcheck
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/epubcheck.zip" \
+            "https://github.com/w3c/epubcheck/releases/download/v${EPUBCHECK_VERSION}/epubcheck-${EPUBCHECK_VERSION}.zip"
+          unzip -q "$RUNNER_TEMP/epubcheck.zip" -d "$RUNNER_TEMP"
+          echo "EPUBCHECK_JAR=$RUNNER_TEMP/epubcheck-${EPUBCHECK_VERSION}/epubcheck.jar" >> "$GITHUB_ENV"
+      - run: uv sync --all-extras --frozen
+      - run: uv run ruff check . && uv run ruff format --check .
+      # Unit tests, with pandoc and epubcheck required (no skips).
+      - run: uv run pytest
+        env:
+          REQUIRE_PANDOC: "1"
+          REQUIRE_EPUBCHECK: "1"
+
+  image:
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build for the smoke test
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: kavita-mcp:test
+
+      - name: Smoke test (MCP initialize + tools/list, every tool annotated)
+        run: |
+          docker run -d --name smoke --read-only --tmpfs /tmp --cap-drop ALL \
+            -e KAVITA_API_KEY=smoke0123456789smoke0123456789 -p 8000:8000 kavita-mcp:test
+          for _ in $(seq 1 30); do
+            docker exec smoke python -c "import socket; socket.create_connection(('127.0.0.1', 8000), 2).close()" && break
+            sleep 1
+          done
+          python3 scripts/smoke_mcp.py http://127.0.0.1:8000/mcp
+          docker exec smoke pandoc --version | head -1
+          docker rm -f smoke
+
+      - uses: docker/login-action@v4
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Build and push (amd64 + arm64)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

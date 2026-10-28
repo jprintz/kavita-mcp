@@ -1,0 +1,62 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/Series/on-deck",
+    "params": {
+      "PageNumber": 1,
+      "PageSize": 20
+    },
+    "json": null
+  },
+  "status": 200,
+  "headers": {
+    "Pagination": "{\"currentPage\":1,\"itemsPerPage\":20,\"totalItems\":1,\"totalPages\":1}"
+  },
+  "body": [
+    {
+      "id": 2,
+      "name": "Market Report",
+      "originalName": "Market Report",
+      "localizedName": "",
+      "sortName": "Market Report",
+      "pages": 3,
+      "coverImageLocked": false,
+      "lastChapterAdded": "2026-10-28T10:23:29.1518702",
+      "lastChapterAddedUtc": "2026-10-28T10:23:29.1518703",
+      "userRating": 0,
+      "hasUserRated": false,
+      "totalReads": 0,
+      "pagesRead": 1,
+      "latestReadDate": "2026-10-28T10:23:30.0252614",
+      "format": 3,
+      "created": "2026-10-28T10:23:29.1477515",
+      "sortNameLocked": false,
+      "localizedNameLocked": false,
+      "nameLocked": false,
+      "wordCount": 726,
+      "libraryId": 2,
+      "libraryName": "Reports",
+      "minHoursToRead": 0,
+      "maxHoursToRead": 0,
+      "avgHoursToRead": 0.036065575,
+      "folderPath": "/reports/market-report",
+      "lowestFolderPath": "/reports/market-report",
+      "lastFolderScanned": "2026-10-28T10:23:29.1538328",
+      "dontMatch": false,
+      "isBlacklisted": false,
+      "isStandAlone": false,
+      "metadataProviderOverride": null,
+      "coverImage": "",
+      "primaryColor": null,
+      "secondaryColor": null,
+      "aniListId": 0,
+      "malId": 0,
+      "hardcoverId": 0,
+      "metronId": 0,
+      "comicVineId": null,
+      "mangaBakaId": 0,
+      "mangaBakaEditionId": null,
+      "cbrId": 0
+    }
+  ]
+}
